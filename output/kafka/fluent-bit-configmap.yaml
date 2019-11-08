@@ -1,6 +1,6 @@
 apiVersion: v1
 data:
-  filter-kubernetes.conf: |-
+  filter-kubernetes.conf: |
     [FILTER]
         Name             parser
         Match            kube.var.log.containers.alexa*
@@ -65,7 +65,7 @@ data:
         Merge_Log           On
         K8S-Logging.Parser  On
         K8S-Logging.Exclude On
-  fluent-bit.conf: |-
+  fluent-bit.conf: |
     [SERVICE]
         Flush         1
         Log_Level     debug
@@ -78,7 +78,7 @@ data:
     @INCLUDE input-kubernetes.conf
     @INCLUDE filter-kubernetes.conf
     @INCLUDE output-stdout.conf
-  input-kubernetes.conf: |-
+  input-kubernetes.conf: |
     [INPUT]
         Name              tail
         Tag               kube.*
@@ -88,17 +88,37 @@ data:
         Mem_Buf_Limit     5MB
         Skip_Long_Lines   On
         Refresh_Interval  10
-  output-stdout.conf: |-
+    [INPUT]
+        Name              tail
+        Tag               kube.*
+        Path              /var/log/containers/*_rap_*.log
+        Parser            docker
+        DB                /var/log/flb_kube.db
+        Mem_Buf_Limit     5MB
+        Skip_Long_Lines   On
+        Refresh_Interval  10
+  output-stdout.conf: |
     [OUTPUT]
         Name   stdout
         Match  *
         Format json_lines
+    #[OUTPUT]
+    #    Name        kafka
+    #    Match       *
+    #    Brokers     10.206.194.32:24224
+    #    #Brokers     10.206.194.30:24224
+    #    Topics      raw_logs
     [OUTPUT]
-        Name        kafka
-        Match       *
-        Brokers     10.206.194.30:24224
-        Topics      raw_logs
-  parsers.conf: |-
+        Name          forward
+        Match         kube.var.log.containers.rap*
+        Host          td-agent-bit.logging.svc.cluster.local
+        Port          24224
+    [OUTPUT]
+        Name          forward
+        Match         kube.*
+        Host          10.206.194.32
+        Port          24224
+  parsers.conf: |
     [PARSER]
         Name        docker
         Format      json
@@ -107,7 +127,7 @@ data:
         Time_Keep   On
         # Command      |  Decoder | Field | Optional Action
         # =============|==================|=================
-        #Decode_Field_As   escaped    log
+        Decode_Field_As   escaped    log
     [PARSER]
         Name alexa
         Format Regex
@@ -129,19 +149,19 @@ data:
     [PARSER]
         Name netflixapi
         Format Regex
-        Regex ^.*\{"request_id":"(?<aux5>.*?)","elapsed_time":"(?<aux2>.*?)","component":"(?<sitename>.*?)","timestamp":"(?<timestamp>.*?)","level":"(?<level>.*?)","message":{"method":"(?<method>.*?)","url":"(?<uri-stem>.*?)","query_string":(?<uri-query>.*?),"response_time":"(?<rt>.*?)ms","status_code":(?<code>\d.*?),"response_length":(?<bytes_out>\d*+)\}\}$
+        Regex ^.*\{"request_id":"(?<aux5>.*?)","elapsed_time":"(?<aux2>.*?)","component":"(?<sitename>.*?)","timestamp":"(?<timestamp>.*?)","level":"(?<level>.*?)","message":{"method":"(?<method>.*?)","url":"(?<uri_stem>.*?)","query_string":(?<uri_query>.*?),"response_time":"(?<rt>.*?)ms","status_code":(?<code>\d.*?),"response_length":(?<bytes_out>\d*+)\}\}$
         Time_Key timestamp
         Time_Format %Y-%m-%dT%H:%M:%S
     [PARSER]
         Name sso
         Format Regex
-        Regex ^.*\{"component": "(?<sitename>.*?)", "timestamp": "(?<timestamp>.*?)", "level": "(?<level>.*?)", "message": "{"method":"(?<method>.*?)","url":"(?<uri-stem>.*?)","query_string":"(?<uri-query>.*?)","status_code":(?<code>\d.*?),"response_length":(?<bytes_out>\d*+),"response_time":(?<rt>.*?)}", "requestId": "(?<aux5>.*?)"\}$
+        Regex ^.*\{"component": "(?<sitename>.*?)", "timestamp": "(?<timestamp>.*?)", "level": "(?<level>.*?)", "message": "{"method":"(?<method>.*?)","url":"(?<uri_stem>.*?)","query_string":"(?<uri_query>.*?)","status_code":(?<code>\d.*?),"response_length":(?<bytes_out>\d*+),"response_time":(?<rt>.*?)}", "requestId": "(?<aux5>.*?)"\}$
         Time_Key timestamp
         Time_Format %Y-%m-%dT%H:%M:%S
     [PARSER]
         Name amazonapi
         Format Regex
-        Regex ^.*\{"component": "(?<sitename>.*?)", "timestamp": "(?<timestamp>.*?)", "level": "(?<level>.*?)", "message": "{"method":"(?<method>.*?)","url":"(?<uri-stem>.*?)","query_string":"(?<uri-query>.*?)","status_code":(?<code>\d.*?),"response_length":(?<bytes_out>\d*+),"response_time":(?<rt>.*?)}", "requestId": "(?<aux5>.*?)"\}$
+        Regex ^.*\{"component": "(?<sitename>.*?)", "timestamp": "(?<timestamp>.*?)", "level": "(?<level>.*?)", "message": "{"method":"(?<method>.*?)","url":"(?<uri_stem>.*?)","query_string":"(?<uri_query>.*?)","status_code":(?<code>\d.*?),"response_length":(?<bytes_out>\d*+),"response_time":(?<rt>.*?)}", "requestId": "(?<aux5>.*?)"\}$
         Time_Key timestamp
         Time_Format %Y-%m-%dT%H:%M:%S
     [PARSER]
@@ -174,8 +194,10 @@ data:
         Regex ^(?<time>[^ ]*),(?<level>[^ ]*),(?<id1>[^ ]*),(?<id2>[^ ]*),.+,msg="(?<msg>[^$]*)".*$
         Time_Key timestamp
         Time_Format %Y-%m-%dT%H:%M:%S
-        
-  stream_processor.conf: "#[STREAM_TASK]\r\n#    Name   kubernetes_test\r\n#    Exec   CREATE STREAM kube WITH (tag='results') AS SELECT kubernetes,message from STREAM:fluentd;"
+  stream_processor.conf: |
+    #[STREAM_TASK]
+      #Name   kubernetes_test
+      #Exec   CREATE STREAM kube WITH (tag='results') AS SELECT kubernetes,message from STREAM:fluentd;
 kind: ConfigMap
 metadata:
   labels:
